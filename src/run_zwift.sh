@@ -83,17 +83,27 @@ fi
 ##### Automatically cleanup on exit #####
 
 cleanup_invoked=0
+gamemode_pid=""
+
 cleanup() {
     if [[ ${cleanup_invoked} -ne 1 ]]; then
         msgbox info "Killing unnecessary applications"
         pkill ZwiftLauncher || true
         pkill ZwiftWindowsCra || true
         pkill -f MicrosoftEdgeUpdate || true
+        pkill -f 'explorer.exe' || true
+        [[ -n ${gamemode_pid} ]] && kill "${gamemode_pid}" 2>/dev/null || true
         cleanup_invoked=1
     fi
 }
 
-trap cleanup EXIT
+shutdown() {
+    cleanup
+    wineserver -k || true
+}
+
+trap shutdown EXIT
+trap 'exit 0' INT TERM
 
 ###########################################
 ##### Start Zwift Launcher using wine #####
@@ -152,17 +162,14 @@ msgbox ok "Zwift started using wine"
 
 cleanup # important, wine server will not stop if launcher etc keep running
 
-declare -a wineserver_cmd
-wineserver_cmd=(wineserver -w)
-
 if [[ ${ZWIFT_NO_GAMEMODE} -ne 1 ]]; then
-    wineserver_cmd=(/usr/games/gamemoderun "${wineserver_cmd[@]}")
+    /usr/games/gamemoderun sleep infinity &
+    gamemode_pid=$!
 fi
 
-msgbox info "Launching wine server"
-if ! "${wineserver_cmd[@]}"; then
-    msgbox error "Failed to launch wine server!"
-    exit 1
-fi
+msgbox info "Waiting for Zwift to exit"
+while pgrep -f ZwiftApp.exe > /dev/null 2>&1; do
+    sleep 1
+done
 
 msgbox ok "Zwift closed, exiting"

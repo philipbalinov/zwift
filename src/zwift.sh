@@ -173,7 +173,6 @@ readonly ZWIFT_OVERRIDE_GRAPHICS="${ZWIFT_OVERRIDE_GRAPHICS:-0}"
 readonly ZWIFT_OVERRIDE_RESOLUTION="${ZWIFT_OVERRIDE_RESOLUTION:-}"
 readonly ZWIFT_FG="${ZWIFT_FG:-0}"
 readonly ZWIFT_NO_GAMEMODE="${ZWIFT_NO_GAMEMODE:-0}"
-readonly ZWIFT_NO_VULKAN="${ZWIFT_NO_VULKAN:-0}"
 readonly WINE_EXPERIMENTAL_WAYLAND="${WINE_EXPERIMENTAL_WAYLAND:-0}"
 readonly NETWORKING="${NETWORKING:-bridge}"
 readonly ZWIFT_UID="${ZWIFT_UID:-${UID}}"
@@ -208,7 +207,7 @@ declare -a parameters_to_print
 parameters_to_print=(
     DEBUG VERBOSITY CONTAINER_TOOL IMAGE VERSION SCRIPT_VERSION DONT_CHECK DONT_PULL DONT_CLEAN DRYRUN INTERACTIVE
     CONTAINER_EXTRA_ARGS ZWIFT_USERNAME ZWIFT_PASSWORD ZWIFT_WORKOUT_DIR ZWIFT_ACTIVITY_DIR ZWIFT_LOG_DIR ZWIFT_SCREENSHOTS_DIR
-    ZWIFT_OVERRIDE_GRAPHICS ZWIFT_OVERRIDE_RESOLUTION ZWIFT_FG ZWIFT_NO_GAMEMODE ZWIFT_NO_VULKAN WINE_EXPERIMENTAL_WAYLAND NETWORKING ZWIFT_UID
+    ZWIFT_OVERRIDE_GRAPHICS ZWIFT_OVERRIDE_RESOLUTION ZWIFT_FG ZWIFT_NO_GAMEMODE WINE_EXPERIMENTAL_WAYLAND NETWORKING ZWIFT_UID
     ZWIFT_GID VGA_DEVICE_FLAG PRIVILEGED_CONTAINER ZWIFT_NO_PRIVILEGED DBUS_SESSION_BUS_ADDRESS DISPLAY WAYLAND_DISPLAY XAUTHORITY XDG_RUNTIME_DIR
 )
 for parameter_to_print in "${parameters_to_print[@]}"; do
@@ -350,8 +349,6 @@ declare -a entrypoint_args
 entrypoint_args=()
 
 if [[ ${CONTAINER_TOOL} == "podman" ]]; then
-    # Podman has to use container id 1000
-    # Local user is mapped to the container id
     local_uid="${ZWIFT_UID}"
     container_uid=1000
     container_gid=1000
@@ -465,11 +462,6 @@ fi
 # Pass environment variable to container if gamemode should be disabled
 if [[ ${ZWIFT_NO_GAMEMODE} -eq 1 ]]; then
     container_env_vars+=(ZWIFT_NO_GAMEMODE="1")
-fi
-
-# Disable Vulkan inside the container (workaround for Wine 11 + Vulkan kernel crashes)
-if [[ ${ZWIFT_NO_VULKAN} -eq 1 ]]; then
-    container_env_vars+=(WINEDLLOVERRIDES="vulkan-1=")
 fi
 
 # Interactive mode and run in foreground/background
@@ -682,6 +674,12 @@ elif [[ -f "/proc/driver/nvidia/version" ]]; then
     fi
 else
     container_args+=(--device="/dev/dri:/dev/dri")
+    for dri_device in /dev/dri/renderD128 /dev/dri/card0; do
+        if [[ -e ${dri_device} ]]; then
+            dri_gid="$(stat -c '%g' "${dri_device}")"
+            container_args+=(--group-add "${dri_gid}")
+        fi
+    done
 fi
 
 ###########################

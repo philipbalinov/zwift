@@ -28,6 +28,8 @@ readonly WINE_USER_HOME="/home/user/.wine/drive_c/users/user"
 readonly ZWIFT_HOME="/home/user/.wine/drive_c/Program Files (x86)/Zwift"
 readonly ZWIFT_DOCS="${WINE_USER_HOME}/AppData/Local/Zwift"
 
+export WINEPREFIX="/home/user/.wine"
+
 msgbox() {
     local type="${1:?}" # Type: info, ok, warning, error, debug
     local msg="${2:?}"  # Message: the message to display
@@ -139,16 +141,21 @@ install_zwift() {
 
     # download and install webview 2
     msgbox info "Downloading and installing webview2"
-    wget -O webview2-setup.exe https://go.microsoft.com/fwlink/p/?LinkId=2124703 || return 1
+    aria2c -x 16 -s 16 -o webview2-setup.exe https://go.microsoft.com/fwlink/p/?LinkId=2124703 || return 1
     wine webview2-setup.exe /silent /install || return 1
 
     # enable Wayland support, requires DISPLAY to be blank to use Wayland
     msgbox info "Enabling Wayland support"
     wine reg.exe add HKCU\\Software\\Wine\\Drivers /v Graphics /d x11,wayland || return 1
 
-    # download and install zwift
+    # download and extract zwift (innoextract avoids Wine 11 setupapi SP_COPY_NOOVERWRITE regression)
     msgbox info "Downloading and installing Zwift"
-    wget https://cdn.zwift.com/app/ZwiftSetup.exe || return 1
+    aria2c -x 16 -s 16 https://cdn.zwift.com/app/ZwiftSetup.exe || return 1
+    local extract_dir
+    extract_dir=$(mktemp -d) || return 1
+    innoextract --extract --output-dir "${extract_dir}" ZwiftSetup.exe || return 1
+    cp -r "${extract_dir}/app/." . || return 1
+    rm -rf "${extract_dir}"
     wine ZwiftSetup.exe /SP- /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /NOCANCEL || return 1
 }
 

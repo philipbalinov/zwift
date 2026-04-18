@@ -91,6 +91,11 @@ update_required=0
 if is_empty_directory "${ZWIFT_HOME}"; then
     startup_cmd=(/bin/update_zwift.sh --install)
     update_required=1
+elif [[ ! -f "${ZWIFT_HOME}/ZwiftApp.exe" ]]; then
+    # Launcher present but game binary missing (e.g. image built with innoextract pre-install
+    # which only extracts the launcher). Run the launcher to download the full game.
+    startup_cmd=(/bin/update_zwift.sh)
+    update_required=1
 elif [[ ${1:-} == "--update" ]]; then
     startup_cmd=(/bin/update_zwift.sh)
     update_required=1
@@ -182,9 +187,17 @@ if [[ ${CONTAINER_TOOL} == "docker" ]]; then
     fi
 
     startup_cmd=(gosu user:user "${startup_cmd[@]}")
+else
+    # Podman with --userns keep-id starts the container already running as 'user' (uid=1000)
+    # with the host user's supplemental groups (render, video) intact. Do NOT wrap with gosu:
+    # gosu calls initgroups() which resets supplemental groups from /etc/group inside the
+    # container, dropping the host DRI groups needed to open /dev/dri/renderD128.
+    :
 fi
 
 #########################################
 ##### Launch update or start script #####
 
+export XDG_RUNTIME_DIR="/run/user/$(id -u user)"
+mkdir -p "${XDG_RUNTIME_DIR}"
 "${startup_cmd[@]}"
