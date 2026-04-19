@@ -136,8 +136,16 @@ install_zwift() {
     # dotnet20: to prevent error dialog with CloseLauncher.exe
     # dotnet48: required by Zwift
     # d3dcompiler_47: required for Vulkan shaders
+    # Kill ngen (mscorsvw.exe) in the background — it hangs indefinitely under Wine 11
+    # when trying to JIT-compile dotnet assemblies via COM, blocking winetricks from exiting.
+    while sleep 5; do pkill -f mscorsvw.exe 2>/dev/null; done &
+    local ngen_killer=$!
+
     msgbox info "Installing prerequisites using winetricks"
-    winetricks -q dotnet20 dotnet48 d3dcompiler_47 || return 1
+    winetricks -q dotnet20 dotnet48 d3dcompiler_47
+    local rc=$?
+    kill "${ngen_killer}" 2>/dev/null || true
+    [ ${rc} -eq 0 ] || return 1
 
     # download and install webview 2
     msgbox info "Downloading and installing webview2"
@@ -155,8 +163,17 @@ install_zwift() {
     extract_dir=$(mktemp -d) || return 1
     innoextract --extract --output-dir "${extract_dir}" ZwiftSetup.exe || return 1
     cp -r "${extract_dir}/app/." . || return 1
-    rm -rf "${extract_dir}"
-    wine ZwiftSetup.exe /SP- /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /NOCANCEL || return 1
+    rm -rf "${extract_dir}" ZwiftSetup.exe
+
+    # install fonts for correct Unicode/emoji rendering by copying system fonts directly,
+    # avoiding winetricks which hangs on wineserver -w due to background Wine services
+    msgbox info "Installing fonts"
+    local fonts_dir="${WINEPREFIX}/drive_c/windows/Fonts"
+    mkdir -p "${fonts_dir}"
+    find /usr/share/fonts/truetype/liberation \
+         /usr/share/fonts/truetype/unifont \
+         /usr/share/fonts/truetype/noto \
+         -name "*.ttf" -exec cp {} "${fonts_dir}/" \; 2>/dev/null || true
 }
 
 ###########################
